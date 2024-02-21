@@ -1,0 +1,237 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(lubridate)
+```
+
+Old part data processing of 2023 year Davis + knizhka
+```{r}
+# meteo = read.csv('Jankuat_meteo_2023.txt', header = T, sep = '', skip = 1) %>% mutate(d =  dmy_hm(paste0(Date, ' ', Time)), 
+# 	                                                                                      temp = Out, 
+# 	                                                                                      rain = Rain) %>% select(d, temp, rain) %>% subset(year(d) == 2023)
+
+meteo = read_xlsx('Davis_meteo_23.xlsx') %>% transmute(d = `Data Time`, temp = `Temp Out`, rain =  as.numeric(`Rain`))
+
+seq_15min = seq.POSIXt(ymd_hms('2023-05-01 00:00:00'),ymd_hms('2023-10-01 00:00:00'), by = '15 min') %>% data.frame() 
+colnames(seq_15min) = 'd'
+
+seq_15min = seq_15min %>% mutate(x = ' ') %>% left_join(meteo) %>% 
+  select(-x) %>% apply(., c(1, 2), FUN = function(x) ifelse(is.na(x) == T, -999, x))
+meteo = data.frame(seq_15min)
+meteo$d = ymd_hms(meteo$d)
+meteo$temp = as.numeric(meteo$temp)
+meteo$rain = as.numeric(meteo$rain)
+
+kinzhka = readxl::read_xlsx('Джан_водомерные_наблюдения_2023.xlsx', sheet = 1) %>% mutate(d = ymd_hms(paste0(ymd(`Дата`), ' ', paste(hour(ymd_hms(`Время`)),minute(ymd_hms(`Время`)),second(ymd_hms(`Время`)), sep=":")))) %>% select(d, SSC, temp_water)
+
+discharge = readxl::read_xlsx('книжка август .xlsx', sheet = 5) %>% mutate(d = ymd_hms(`Дата`), level = `H_privod скользящее среднее`) %>% select(d,Q, level) 
+
+data_ch = meteo %>% left_join(kinzhka) %>% na.omit()
+data = meteo %>% left_join(kinzhka)
+data[1, ] = data_ch[1, ]
+data[nrow(data), ] = data_ch[nrow(data_ch), ]
+
+
+data = data  %>% left_join(discharge) %>%  mutate(SSC = zoo::na.approx(SSC), temp_water = zoo::na.approx(temp_water), Q = zoo::na.approx(Q, rule = 2, maxgap = 20), level = zoo::na.approx(level, rule = 2, maxgap = 20))
+
+data_agg_rain = data %>% mutate(date1 = date(d), h = day(d)) %>% group_by(date1, h) %>% select(-d) %>% summarise_all(sum) %>% select(date1, h, rain)
+
+data_agg1 = data %>% mutate(date1 = date(d), h = day(d)) %>% group_by(date1, h) %>% summarise_all(mean) %>% select(-rain, d) %>% left_join(data_agg_rain) 
+
+data_2023 = data_agg1 %>% apply(., c(1, 2), FUN = function(x) ifelse(as.numeric(x) > -10, x, NA)) %>% data.frame() %>% 
+  mutate(
+date = date(data_agg1$d)
+,ssc = as.numeric(SSC)
+,q = as.numeric(Q)
+,rain_mm = as.numeric(rain)
+,t2_c = as.numeric(temp)
+
+) %>% select(date, t2_c,ssc, rain_mm, q, ssc)
+  
+rm(data_agg1, data_agg_rain, discharge, kinzhka, seq_15min, meteo, data, data_ch)
+```
+
+SSC full data_base
+```{r}
+a_hydro_2007_2022 <- 
+  qread("hydro_2007-2022_2023-04-21.qs") %>% dplyr::select(-c(year, ntu)) %>% mutate(q = zoo::na.approx(q, rule = 2, maxgap = 20), 
+                                                                                     ssc = zoo::na.approx(ssc, rule = 2, maxgap = 20), 
+                                                                                     date = paste0(ymd(datetime), '_', day(datetime))) %>% 
+  group_by(date) %>% select(-datetime) %>% summarise_all(mean) %>% mutate(date = ymd(substr(date, 1, 10))) %>% ungroup() %>% na.omit()
+
+# - Davis data
+data_2007_2022 <- 
+  qread("aws_daily_2008-2022_2023-04-20.qs") %>% full_join(a_hydro_2007_2022) %>% bind_rows(data_2023)
+
+seq_days = seq.POSIXt(ymd_hms('2007-01-01 00:00:00'),ymd_hms('2024-01-01 00:00:00'), by = 'days') %>% data.frame() 
+colnames(seq_days) = 'date'
+
+suspended_load= seq_days %>% mutate(x = ' ') %>% full_join(data_2007_2022) %>% select(-x) %>% mutate(ssd = q*ssc/1000) # ssc - kg/sec
+
+rm(data_2007_2022, seq_days, data_2023)
+```
+
+Bed load
+```{r}
+a_hydro_2007_2022 <- 
+  qread("hydro_2007-2022_2023-04-21.qs") %>% dplyr::select(-c(year, ntu)) %>% mutate(q = zoo::na.approx(q, rule = 2, maxgap = 20), 
+                                                                                     ssc = zoo::na.approx(ssc, rule = 2, maxgap = 20), 
+                                                                                     date = paste0(ymd(datetime), '_', day(datetime)))
+
+djan_bed16 <- read_xlsx("D:/work/Отчет по Джанкуату 2023/Влекомые наносы, кавказ гидормет/влекомые наносы Толя/sediments_2015_2017.xlsx",
+                      sheet = "vlekomye2016") %>% 
+  dplyr::select(datetime = 2,
+                bedload = 10) %>% 
+  drop_na(datetime) %>% 
+  mutate(datetime = round_date(datetime,
+                               unit = "hour"))
+
+djan_bed17 <- read_xlsx("D:/work/Отчет по Джанкуату 2023/Влекомые наносы, кавказ гидормет/влекомые наносы Толя/sediments_2015_2017.xlsx",
+                        sheet = "vlekomye2017") %>% 
+  dplyr::select(datetime = 4,
+                bedload = 27) %>% 
+  drop_na(datetime) %>% 
+  mutate(datetime = round_date(datetime,
+                               unit = "hour"))
+
+djan_sed_all <- a_hydro_2007_2022 %>% 
+  mutate(ssd = ssc * q) %>% 
+  mutate(ssd = imputeTS::na_interpolation(ssd)) %>% 
+  right_join(
+    bind_rows(djan_bed16,
+              djan_bed17),
+    by = "datetime"
+  ) %>% 
+  transmute(datetime,
+            q,
+            ssd,
+            bsd = bedload)
+
+rm(djan_bed16, djan_bed17, a_hydro_2007_2022)
+```
+
+Bedload data 2015, 2016, 2023 + diammetrs + bedload on cite B
+```{r}
+sediment_load_2023 = read_xlsx('книжка август .xlsx', sheet = 3) %>% transmute(date = `Время...2`, q = `Q, м3/с...5`, ssd = `R, кг/с`, bsd = `G, кг/с...7`, D50_A = `D, мм А`, D50_B = `D, мм Б`, bsd_B = `G, кг/с...11`)
+
+bedload_B_2016 = read_xlsx('D:/work/Отчет по Джанкуату 2023/Влекомые наносы, кавказ гидормет/влекомые наносы Толя/sediments_2015_2017.xlsx', sheet = 6) %>% filter(`Примечание` == 'конец зандра') %>% transmute(date = `Дата`, bsd_B = `Wg, кг/с`, D50_B = `Средневзвешенный диаметр, мм`)
+
+diam_2016 = read_xlsx('D:/work/Отчет по Джанкуату 2023/Влекомые наносы, кавказ гидормет/влекомые наносы Толя/sediments_2015_2017.xlsx', sheet = 6) %>% filter(`Примечание` == 'гст Джанкуат') %>% transmute(date = `Дата`, D50_A = `Средневзвешенный диаметр, мм`)
+
+diam_2016_2017 = read_xlsx('D:/work/Отчет по Джанкуату 2023/Влекомые наносы, кавказ гидормет/влекомые наносы Толя/sediments_2015_2017.xlsx', sheet = 7) %>% filter(`Прим.` == 'влекомые') %>% transmute(date = `Время и Дата`, D50_A = `Средневзвешенный диаметр, мм`) %>% na.omit() %>% bind_rows(diam_2016) %>% left_join(bedload_B_2016)
+
+bed_load = djan_sed_all %>% mutate(date = datetime) %>% select(-datetime) %>% full_join(diam_2016_2017) %>% left_join(bedload_B_2016) %>% bind_rows(sediment_load_2023)
+
+rm(sediment_load_2023, bedload_B_2016, diam_2016, diam_2016_2017, djan_sed_all)
+```
+```{r}
+bed = bed_load %>% transmute(date = lubridate::date(date), bsd, D50_A, bsd_B, D50_B)
+bed_susp_2007_2023 = suspended_load %>% left_join(bed) %>% mutate(year1 = year(date), q = q, month1  = month(date)) %>% 
+  #subset(year1 > 2014 & year1 < 2024)
+  subset(year1 == 2023 | year1 == 2016 | year1 == 2017 | year1 == 2015 |  year1 == 2019) %>% 
+  subset(month1 > 5 & month1 < 10)
+
+
+g2 = ggplot(data = bed_susp_2007_2023) + 
+  geom_line(aes(x = date, y = q, colour = 'Расход воды, м3/с')) + 
+  geom_line(aes(x = date, y = ssd, colour = 'Расход взвешанных наносов, кг/с')) + 
+  geom_point(aes(x = date, y = bsd, colour = 'Расход влекомых наносов, кг/с'))+ 
+  geom_col(aes(x = date, y = rain_mm/10, colour = 'Осадки, см'), width = 0, fill = NA)+
+  facet_wrap(~year1, scales = "free_x") + 
+  labs(y = 'м3/с ,  кг/с , см', 
+       x = ' ', 
+       colour = ' ') + scale_x_datetime(date_breaks = '10 days', date_labels = "%m / %d")+
+  theme(axis.text.x = element_text(size = 20, angle = 90), axis.title.y = element_text(size = 20), legend.text = element_text(size = 20) ) + 
+  guides(colour = guide_legend(nrow = 2))
+
+ggsave(plot = g2 , filename = 'g2.png', width = 12, height = 9)
+
+
+djan_sed_all = bed_susp_2007_2023 %>% subset(year1 == 2016 | year1 == 2017 | year1 == 2023) %>% transmute(date, bsd, ssd, q, tsd = bsd + ssd) %>% na.omit()
+
+# summary( djan_sed_all$bsd/(djan_sed_all$ssd+djan_sed_all$bsd) * 100 )
+# 
+# corrplot::corrplot(djan_sed_all %>% select(-date) %>% cor() , method = 'number' )
+# 
+# t= lm(tsd ~ q, data = djan_sed_all) 
+# t
+# 
+# plot(y = djan_sed_all$tsd, x = djan_sed_all$q)
+
+bed_susp_2007_2023 = bed_susp_2007_2023 %>% mutate(tsd = 0.017*exp(1.867*q))
+
+```
+
+```{r}
+g3 = djan_sed_all %>%
+  # mutate_at(vars(ssd, bsd),
+            # ~log10(.)) %>%
+  rename(`Взвешенные` = ssd,
+         `Влекомые` = bsd) %>% 
+  gather(type, rate, -date) %>% 
+  ggplot(aes(x = date,
+             y = rate,
+             fill = type,
+             color = type)) +
+  geom_col() +
+  labs(y = "Расход наносов, кг/с",
+       x = "",
+       color = "",
+       fill = "") +
+  scale_color_metro() +
+  scale_fill_metro() +
+  facet_wrap(~year(date), 
+             scales = 'free'
+             ) +
+scale_x_datetime(date_breaks = '2 days', date_labels = "%m / %d") +
+  theme(axis.text.x = element_text(angle = 90
+                                   ,vjust = .5
+                                   ,size = 20)
+        ,axis.title.y = element_text(size = 20)
+        ,legend.text = element_text(size = 20) 
+        ) 
+
+
+ggsave(plot = g3 , filename = 'g3.png', width = 12, height = 5)
+
+```
+
+Statistics
+```{r}
+bed_susp_2007_2023_mean = bed_susp_2007_2023 %>% group_by(year1) %>% select(-date, -month1) %>% summarise_all(~mean(., na.rm = T)) %>% mutate(statistic = 'Cр.знач')
+bed_susp_2007_2023_sum = bed_susp_2007_2023 %>% group_by(year1) %>% select(-date,-month1)  %>% summarise_all(~sum(., na.rm = T)) %>% mutate(statistic = 'Сумма')
+bed_susp_2007_2023_min = bed_susp_2007_2023 %>% group_by(year1) %>% select(-date,-month1)  %>% summarise_all(~min(., na.rm = T)) %>% mutate(statistic = 'Min')
+bed_susp_2007_2023_max = bed_susp_2007_2023 %>% group_by(year1) %>% select(-date,-month1)  %>% summarise_all(~max(., na.rm = T)) %>% mutate(statistic = 'Max')
+bed_susp_2007_2023_D = bed_susp_2007_2023 %>% group_by(year1) %>% select(-date,-month1)  %>% summarise_all(~sd(., na.rm = T)) %>% mutate(statistic = 'Ср.кв.откл.')
+
+
+
+bed_susp_2007_2023_stat = bind_rows(list(bed_susp_2007_2023_mean, bed_susp_2007_2023_sum, bed_susp_2007_2023_min, bed_susp_2007_2023_max, bed_susp_2007_2023_D)) %>% mutate(across(where(is.numeric), ~gtsummary::style_sigfig(., 3, big.mark = '') ) ) %>% apply(., 2, function(y) gsub("*Inf", NA, y)) %>% data.frame() %>% mutate_all(~replace(., is.na(.), '-'))
+
+colnames(bed_susp_2007_2023_stat ) = c(
+  'Год'
+  ,'Т воздб оС'
+  ,'Осадки, мм'
+  ,'Q А, м3/с'
+  ,'SSC А, мг/л'
+  ,'R А, кг/с'
+  ,'G А, кг/с'
+  ,'D50 А, мм'
+  ,'G Б, кг/с'
+  ,'D50 Б, мм'
+  ,'tsd, кг/с'
+  ,'Статистика'
+
+  
+)
+
+writexl::write_xlsx(bed_susp_2007_2023_stat, 'bed_susp_2007_2023_stat2.xlsx')
+
+rm(bed_susp_2007_2023_mean, bed_susp_2007_2023_sum, bed_susp_2007_2023_min, bed_susp_2007_2023_max, bed_susp_2007_2023_D)
+
+```
