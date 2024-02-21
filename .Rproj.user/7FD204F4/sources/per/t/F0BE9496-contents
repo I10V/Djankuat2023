@@ -1,0 +1,29 @@
+---
+title: "Untitled"
+output: html_document
+date: "2024-02-05"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(readxl)
+library(lubridate)
+library(tidyverse)
+```
+
+```{r}
+data_ex = list()
+for (i in 1:4){
+data_ex[[i]] = read_xlsx('даные гидромет.xlsx', sheet = i)
+} 
+
+t = seq(ymd('1938-01-01'),ymd('1940-12-31'), by = 'days') %>% data.frame() 
+colnames(t) = 'ДАТА'
+
+t1 = t %>% left_join(data_ex[[1]])
+t2 = t %>% left_join(data_ex[[2]])
+t3 = t %>% left_join(data_ex[[3]])
+t4 = t %>% left_join(data_ex[[4]])
+```
+

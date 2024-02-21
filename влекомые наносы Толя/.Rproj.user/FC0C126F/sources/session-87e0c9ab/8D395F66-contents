@@ -1,0 +1,44 @@
+---
+title: '1'
+output: html_document
+date: "2024-02-16"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# load data ---------------------------------------------------------------
+hydro_2007_2022 <- 
+  qread("hydro_2007-2022_2023-04-21.qs") 
+
+# - Davis data
+day_2007_2022 <- 
+  qread("aws_daily_2008-2022_2023-04-20.qs")
+
+
+
+# hydrological events -----------------------------------------------------
+hydro_he <- 
+  hydro_2007_2022 %>% 
+  arrange(datetime) %>% 
+  group_by(year) %>% 
+  mutate(q_real = q,
+         q = zoo::na.approx(q, rule = 2, maxgap = 20)) %>%
+  drop_na(q) %>% 
+  nest()  %>% 
+  mutate(data = ifelse(!year %in% c(2019, 2021),
+                       map(data, ~hydro_events(.x, q, datetime, 9)),
+                       map(data, ~hydro_events(.x, q, datetime, 15)))) %>%
+  unnest(data) %>% 
+  ungroup() %>% 
+  mutate(he = glue::glue("{year}_{as.character(he)}"),
+         he = as_factor(he),
+         q = q_real) %>% 
+  dplyr::select(-q_real) %>% filter(year > 2014)
+
+
+plot( x  = hydro_he$datetime, y = hydro_he$q)
+```
+

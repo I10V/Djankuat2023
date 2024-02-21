@@ -1,0 +1,43 @@
+
+.libPaths(c('C:/Rlib', .libPaths())) #way of libraries folder
+# 
+# install.packages("installr")
+# 
+# installr::updateR()
+
+library(tidyverse)
+
+t = readxl::read_xlsx('H:/джан 2023/книжка август .xlsx', sheet = 2) %>% select(`SSC, мг/л`, `H, см`, `t, C`)
+
+t= lm(t$`SSC, мг/л` ~ t$`H, см` + t$`t, C`)
+
+summary(t)
+
+
+r = readxl::read_xlsx('C:/Users/пользователь/Desktop/Новая папка/джан 2023/книжка август .xlsx', sheet = 4)
+
+cor.test(r$`Q, м3/с...5`, r$`R, кг/с`)
+
+min(r$`G, кг/с...7`)
+max(r$`G, кг/с...7`)
+mean(r$`G, кг/с...7`)
+
+min(r$`G, кг/с...11`, na.rm = T)
+max(r$`G, кг/с...11`, na.rm = T)
+mean(r$`G, кг/с...11`, na.rm = T)
+
+min(r$`D, мм...8`)
+max(r$`D, мм...8`)
+mean(r$`D, мм...8`)
+
+min(r$`D, мм...12`, na.rm = T)
+max(r$`D, мм...12`, na.rm = T)
+mean(r$`D, мм...12`, na.rm = T)
+
+mean(r$`G/(R+G)`)
+min(r$`G/(R+G)`)
+max(r$`G/(R+G)`)
+
+corrplot::corrplot(cor(r), method = 'number')
+
+cor.test(r$Q_А, r$`R+G`)
