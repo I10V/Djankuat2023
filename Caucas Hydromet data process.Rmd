@@ -52,8 +52,5 @@ psych::corPlot(select(susp_bed, -`Дата`), xlas = 2 )
 
 
 ```
-```{r}
-
-```
 
 
