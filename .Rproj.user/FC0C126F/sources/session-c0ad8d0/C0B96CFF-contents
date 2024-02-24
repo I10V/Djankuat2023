@@ -191,6 +191,8 @@ rm(bed_susp_2007_2023_mean, bed_susp_2007_2023_sum, bed_susp_2007_2023_min, bed_
 
 ggplot(bed_susp_2007_2023 %>% filter(year(date) == 2023)) + geom_line(aes(x = date, y = tsd/(60*60*24)*1000000), colour = 'blue') + geom_line(aes(x = date, y = g), colour = 'red') + geom_line(aes(x = date, y = q*10)) 
 
+
+writexl::write_xlsx(bed_susp_2007_2023, 'out/bed_susp_2007_2023_djan.xlsx')
 ```
 
 Graphics

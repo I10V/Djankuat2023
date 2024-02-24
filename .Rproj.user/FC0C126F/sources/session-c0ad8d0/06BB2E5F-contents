@@ -1,0 +1,107 @@
+---
+title: "Untitled"
+output: html_document
+date: "2024-02-05"
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(readxl)
+library(lubridate)
+library(tidyverse)
+library(ggplot2)
+library(see)
+```
+
+
+```{r}
+data_ex = list()
+for (i in 1:4){
+data_ex[[i]] = read_xlsx('sources/даные Кавказского гидромета по суммарному стоку наносов 1938,1939,1940.xlsx', sheet = i)
+} 
+
+t = seq(ymd('1938-01-01'),ymd('1940-12-31'), by = 'days') %>% data.frame() 
+colnames(t) = 'ДАТА'
+
+t1 = t %>% left_join(data_ex[[1]]) %>% na.omit()
+t2 = t %>% left_join(data_ex[[2]]) %>% na.omit()
+t3 = t %>% left_join(data_ex[[3]]) %>% na.omit()
+t4 = t %>% left_join(data_ex[[4]]) %>% na.omit()
+
+susp = t2 %>% bind_rows(t4) %>% select(-c(`№`, `дата`, `ГОД`, `tip`)) %>% right_join(t)
+colnames(susp) = c('ДАТА', 'уровень susp', 'Расход взвешенных, кг/с', 'Расход воды, м3/с susp', 'мутность, мг/л')
+bed = t1 %>% bind_rows(t3) %>% select(-c(`№`, `Дата`, `ГОД`, `tip`)) %>% right_join(t)
+colnames(bed) = c('ДАТА', 'уровень bed', 'расход влекомых, кг/с', 'Расход воды, м3/с bed')
+
+susp_bed = susp %>% full_join(bed) %>% na.omit() %>% mutate(
+  tota_load = `расход влекомых, кг/с` + `Расход взвешенных, кг/с`, 
+  precentage = round(`расход влекомых, кг/с` / tota_load *100, 1)) %>% select(-c(`Расход воды, м3/с bed`, `уровень bed`))
+
+
+susp_bed = susp_bed %>% mutate(`Расход взвешенных, кг/с` = round(`Расход взвешенных, кг/с`, 1)
+                               ,`мутность, мг/л` =  round(`мутность, мг/л`, 0)
+                               ,`расход влекомых, кг/с`  = round(`расход влекомых, кг/с`, 1)
+                               ,tota_load = round(tota_load, 0)
+                               ) %>% select(-`уровень susp`)
+
+colnames(susp_bed) = c('Дата', "Расход взвешенных наносов, кг/с", "Расход воды, м3/с", "Мутность, мг/л", "Расход влекомых наносов, кг/с", 'Суммарный сток наносов, кг/с', 'Доля влекомого стока, %')
+
+psych::corPlot(select(susp_bed, -`Дата`), xlas = 2 )
+
+
+
+```
+
+Histogram plot
+```{r}
+g4 = susp_bed %>% select(-`Мутность, мг/л`, -`Суммарный сток наносов, кг/с`, -`Доля влекомого стока, %`, -`Расход воды, м3/с`) %>% 
+  gather(type, rate, -`Дата`) %>% 
+  ggplot(aes(x = `Дата`,
+             y = rate,
+             fill = type,
+             color = type)) +
+  geom_col() +
+  labs(y = "Расход наносов, кг/с",
+       x = "",
+       color = "",
+       fill = "") +
+  scale_color_metro() +
+  scale_fill_metro() +
+  facet_wrap(~year(`Дата`), 
+             scales = 'free'
+             ) +
+scale_x_datetime(date_breaks = '10 days', date_labels = "%m / %d") +
+  theme(axis.text.x = element_text(angle = 90
+                                   ,vjust = .5
+                                   ,size = 10)
+        ,axis.title.y = element_text(size = 20)
+        ,legend.text = element_text(size = 20), legend.position = 'bottom'
+        ) 
+
+ggsave(plot = g4 , filename = 'out/g4.png', width = 12, height = 5)
+
+
+```
+
+Statistics table
+```{r}
+bed_susp_2007_2023 = susp_bed %>% mutate(year1 = year(`Дата`))
+
+bed_susp_2007_2023_mean = bed_susp_2007_2023 %>% group_by(year1) %>% select(-`Дата`) %>% summarise_all(~mean(., na.rm = T)) %>% mutate(statistic = 'Cр.знач')
+bed_susp_2007_2023_sum = bed_susp_2007_2023 %>% group_by(year1) %>% select(-`Дата`)  %>% summarise_all(~sum(., na.rm = T)) %>% mutate(statistic = 'Сумма')
+bed_susp_2007_2023_min = bed_susp_2007_2023 %>% group_by(year1) %>% select(-`Дата`)  %>% summarise_all(~min(., na.rm = T)) %>% mutate(statistic = 'Min')
+bed_susp_2007_2023_max = bed_susp_2007_2023 %>% group_by(year1) %>% select(-`Дата`)  %>% summarise_all(~max(., na.rm = T)) %>% mutate(statistic = 'Max')
+bed_susp_2007_2023_D = bed_susp_2007_2023 %>% group_by(year1) %>% select(-`Дата`)  %>% summarise_all(~sd(., na.rm = T)) %>% mutate(statistic = 'Ср.кв.откл.')
+
+
+bed_susp_2007_2023_stat = bind_rows(list(bed_susp_2007_2023_mean, bed_susp_2007_2023_sum, bed_susp_2007_2023_min, bed_susp_2007_2023_max, bed_susp_2007_2023_D)) %>% mutate(across(where(is.numeric), ~gtsummary::style_sigfig(., 3, big.mark = '') ) ) %>% apply(., 2, function(y) gsub("*Inf", NA, y)) %>% data.frame() %>% mutate_all(~replace(., is.na(.), '-'))
+
+rm(bed_susp_2007_2023_mean, bed_susp_2007_2023_sum, bed_susp_2007_2023_min, bed_susp_2007_2023_max, bed_susp_2007_2023_D)
+
+writexl::write_xlsx(bed_susp_2007_2023_stat, 'out/bed_susp_Kazbegi.xlsx')
+writexl::write_xlsx(susp_bed, 'out/kazbegi_full_data.xlsx')
+
+```
+
