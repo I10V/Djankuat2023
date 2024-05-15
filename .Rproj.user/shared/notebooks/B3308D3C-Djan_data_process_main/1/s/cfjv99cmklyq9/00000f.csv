@@ -1,0 +1,8 @@
+"0","bed_load_2016_1 = bed_load %>% na.omit() %>% filter(year(date) == '2016') %>% mutate(G_A_G_Б = bsd - bsd_B) %>% select(-q)"
+"0",""
+"0","bed_load_2016 = qread(""sources/hydro_2007-2022_2023-04-21.qs"") %>% filter(year(datetime) == '2016') %>% subset(month(datetime) == 6 ) %>% "
+"0","  transmute(date = datetime, q) %>% left_join(bed_load_2016_1)"
+"2","Joining with `by = join_by(date)`"
+"0","writexl::write_xlsx(list(bed_load_2016, bed_load_2016_1), 'out/bed_load_2016.xlsx')"
+"0","rm(bed_load_2016_1)"
+"0",""

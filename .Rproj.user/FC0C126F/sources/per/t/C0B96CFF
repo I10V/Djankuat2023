@@ -3,7 +3,7 @@
     "path": "D:/work/Отчет по Джанкуату 2023/Влекомые наносы, кавказ гидормет/Djan_data_process_main.Rmd",
     "project_path": "Djan_data_process_main.Rmd",
     "type": "r_markdown",
-    "hash": "1488142667",
+    "hash": "1665621451",
     "contents": "",
     "dirty": false,
     "created": 1708511519039.0,
@@ -13,16 +13,16 @@
         "tempName": "Untitled1",
         "source_window_id": "",
         "Source": "Source",
-        "cursorPosition": "194,0",
-        "scrollLine": "0",
-        "last_setup_crc32": ""
+        "cursorPosition": "153,0",
+        "scrollLine": "139",
+        "last_setup_crc32": "8c4b49c99341f893"
     },
     "folds": "",
-    "lastKnownWriteTime": 1708814036,
+    "lastKnownWriteTime": 1715791840,
     "encoding": "UTF-8",
     "collab_server": "",
     "source_window": "",
-    "last_content_update": 1708814036967,
+    "last_content_update": 1715791840146,
     "read_only": false,
     "read_only_alternatives": []
 }

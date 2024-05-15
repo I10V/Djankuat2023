@@ -10,6 +10,7 @@ library(lubridate)
 library(tidyverse)
 library(readxl)
 library(qs)
+library(plotly)
 
 ```
 
@@ -57,15 +58,16 @@ date = date(data_agg1$d)
 
 ) %>% select(date, t2_c,ssc, rain_mm, q, ssc)
   
-rm(data_agg1, data_agg_rain, discharge, kinzhka, seq_15min, meteo, data, data_ch)
+rm(data_agg1, data_agg_rain, discharge, kinzhka, seq_15min, meteo, data_ch)
 ```
 
 SSC full data_base
 ```{r}
 a_hydro_2007_2022 <- 
-  qread("sources/hydro_2007-2022_2023-04-21.qs") %>% dplyr::select(-c(year, ntu)) %>% mutate(q = zoo::na.approx(q, rule = 2, maxgap = 20), 
-                                                                                     ssc = zoo::na.approx(ssc, rule = 2, maxgap = 20), 
-                                                                                     date = paste0(ymd(datetime), '_', day(datetime))) %>% 
+  qread("sources/hydro_2007-2022_2023-04-21.qs") %>% dplyr::select(-c(year, ntu)) %>% 
+  mutate(q = zoo::na.approx(q, rule = 2, maxgap = 20), 
+         ssc = zoo::na.approx(ssc, rule = 2, maxgap = 20), 
+        date = paste0(ymd(datetime), '_', day(datetime))) %>% 
   group_by(date) %>% select(-datetime) %>% summarise_all(mean) %>% mutate(date = ymd(substr(date, 1, 10))) %>% ungroup() %>% na.omit()
 
 # - Davis data
@@ -77,10 +79,85 @@ colnames(seq_days) = 'date'
 
 suspended_load= seq_days %>% mutate(x = ' ') %>% full_join(data_2007_2022) %>% select(-x) %>% mutate(ssd = q*ssc/1000) # ssc - kg/sec
 
-rm(data_2007_2022, seq_days, data_2023)
+rm(data_2007_2022, seq_days)
 ```
 
-Bed load
+Hydro and meteo hourly data
+```{r}
+#2007 - 2022
+a_hydro_2007_2022 <- 
+  qread("sources/hydro_2007-2022_2023-04-21.qs") %>% dplyr::select(-c(year, ntu)) %>% 
+  transmute(
+     date = datetime
+     ,q = zoo::na.approx(q, rule = 2, maxgap = 20)
+    ,ssc = zoo::na.approx(ssc, rule = 2, maxgap = 20)
+        ) %>% na.omit()
+
+data_2007_2022 <- 
+  qread("sources/aws_daily_2008-2022_2023-04-20.qs") %>% full_join(a_hydro_2007_2022) %>% bind_rows(data_2023)
+
+seq_days = seq.POSIXt(ymd_hms('2007-01-01 00:00:00'),ymd_hms('2024-01-01 00:00:00'), by = 'days') %>% data.frame() 
+colnames(seq_days) = 'date'
+
+suspended_load2= seq_days %>% mutate(x = ' ') %>% full_join(data_2007_2022) %>% select(-x) %>% 
+  transmute(
+     d = date
+    ,temp = zoo::na.approx(t2_c, rule = 2, maxgap = 30)
+    ,rain = rain_mm
+    ,q
+    ,ssc
+         
+           )
+
+
+#2023
+meteo = read_xlsx('sources/Davis_meteo_23.xlsx') %>% transmute(d = `Data Time`, temp = `Temp Out`, rain =  as.numeric(`Rain`))
+
+seq_15min = seq.POSIXt(ymd_hms('2023-05-01 00:00:00'),ymd_hms('2023-10-01 00:00:00'), by = '15 min') %>% data.frame() 
+colnames(seq_15min) = 'd'
+
+seq_15min = seq_15min %>% mutate(x = ' ') %>% left_join(meteo) %>% 
+  select(-x) %>% apply(., c(1, 2), FUN = function(x) ifelse(is.na(x) == T, -999, x))
+meteo = data.frame(seq_15min)
+meteo$d = ymd_hms(meteo$d)
+meteo$temp = as.numeric(meteo$temp)
+meteo$rain = as.numeric(meteo$rain)
+
+kinzhka = readxl::read_xlsx('sources/Джан_водомерные_наблюдения_2023.xlsx', sheet = 1) %>% mutate(d = ymd_hms(paste0(ymd(`Дата`), ' ', paste(hour(ymd_hms(`Время`)),minute(ymd_hms(`Время`)),second(ymd_hms(`Время`)), sep=":")))) %>% select(d, SSC, temp_water)
+
+discharge = readxl::read_xlsx('sources/книжка август .xlsx', sheet = 5) %>% mutate(d = ymd_hms(`Дата`), level = `H_privod скользящее среднее`) %>% select(d,Q, level) 
+
+data_ch = meteo %>% left_join(kinzhka) %>% na.omit()
+data = meteo %>% left_join(kinzhka)
+data[1, ] = data_ch[1, ]
+data[nrow(data), ] = data_ch[nrow(data_ch), ]
+
+data = data  %>% left_join(discharge) %>% transmute(d, ssc = zoo::na.approx(SSC), temp_water = zoo::na.approx(temp_water), q = zoo::na.approx(Q, rule = 2, maxgap = 20), level = zoo::na.approx(level, rule = 2, maxgap = 20)) %>% na.omit()
+
+#2007 - 2023
+a_hydro_2007_2023 = bind_rows(suspended_load2, data) %>% mutate(temp = ifelse(temp == -999.0, NA, temp),
+                                                               year = year(d)
+                                                               )
+
+
+
+
+a_hydro_2007_2023_max = a_hydro_2007_2023 %>% select(-d) %>% 
+  group_by(year) %>% summarise_all(~max(., na.rm = T)) %>% filter(year %in% c(2015, 2016, 2017, 2019, 2023)) %>% mutate(stat = 'max')
+a_hydro_2007_2023_min = a_hydro_2007_2023 %>% select(-d) %>% 
+  group_by(year) %>% summarise_all(~min(., na.rm = T)) %>% filter(year %in% c(2015, 2016, 2017, 2019, 2023)) %>% mutate(stat = 'min')
+a_hydro_2007_2023_sd = a_hydro_2007_2023 %>% select(-d) %>% 
+  group_by(year) %>% summarise_all(~sd(., na.rm = T)) %>% filter(year %in% c(2015, 2016, 2017, 2019, 2023)) %>% mutate(stat = 'sd')
+
+hourly_stat = bind_rows(a_hydro_2007_2023_max, a_hydro_2007_2023_min, a_hydro_2007_2023_sd)
+
+writexl::write_xlsx(hourly_stat, 'out/hourly_stat.xlsx')
+
+rm(a_hydro_2007_2022, discharge, data_ch, kinzhka, meteo, seq_15min, seq_days, suspended_load2, data_2007_2022, a_hydro_2007_2023, a_hydro_2007_2023_max, a_hydro_2007_2023_min, a_hydro_2007_2023_sd)
+```
+
+
+Bed load 2016, 2017
 ```{r}
 a_hydro_2007_2022 <- 
   qread("sources/hydro_2007-2022_2023-04-21.qs") %>% dplyr::select(-c(year, ntu)) %>% mutate(q = zoo::na.approx(q, rule = 2, maxgap = 20), 
@@ -89,39 +166,48 @@ a_hydro_2007_2022 <-
 
 djan_bed16 <- read_xlsx("sources/sediments_2015_2017.xlsx",
                       sheet = "vlekomye2016") %>% 
-  dplyr::select(datetime = 2,
-                bedload = 10) %>% 
+  dplyr::select(datetime = 2
+                ,bedload = 10
+                ,name = 1
+                ) %>% 
   drop_na(datetime) %>% 
   mutate(datetime = round_date(datetime,
-                               unit = "hour"))
+                               unit = "hour")) %>% mutate(name = as.character(name))
 
 djan_bed17 <- read_xlsx("sources/sediments_2015_2017.xlsx",
                         sheet = "vlekomye2017") %>% 
   dplyr::select(datetime = 4,
-                bedload = 27) %>% 
+                bedload = 27,
+                name = 1
+                ) %>% 
   drop_na(datetime) %>% 
   mutate(datetime = round_date(datetime,
                                unit = "hour"))
 
 djan_sed_all <- a_hydro_2007_2022 %>% 
-  mutate(ssd = ssc * q) %>% 
+  mutate(ssd = ssc * q/1000) %>% 
   mutate(ssd = imputeTS::na_interpolation(ssd)) %>% 
   right_join(
     bind_rows(djan_bed16,
               djan_bed17),
     by = "datetime"
   ) %>% 
-  transmute(datetime,
-            q,
-            ssd,
-            bsd = bedload)
+  transmute(datetime
+            ,q
+            ,ssd
+            ,bsd = bedload
+            ,name = name
+            )
+
+
+sediment_load_2023 = read_xlsx('sources/книжка август .xlsx', sheet = 3) %>% transmute(name = as.character(`номер`), d = `Время...2`, q = `Q, м3/с...10`, ssd = `R, кг/с`, bsd = `G, кг/с...7`, D50_A = `D, мм А`, D50_B = `D, мм Б`, bsd_B = `G, кг/с...11`) %>% left_join(data) %>% mutate(ssd = ssd, q = q, date = d) %>% select(-d)
+
 
 rm(djan_bed16, djan_bed17, a_hydro_2007_2022)
 ```
 
 Bedload data 2015, 2016, 2023 + diammetrs + bedload on cite B
 ```{r}
-sediment_load_2023 = read_xlsx('sources/книжка август .xlsx', sheet = 3) %>% transmute(date = `Время...2`, q = `Q, м3/с...5`, ssd = `R, кг/с`, bsd = `G, кг/с...7`, D50_A = `D, мм А`, D50_B = `D, мм Б`, bsd_B = `G, кг/с...11`)
 
 bedload_B_2016 = read_xlsx('sources/sediments_2015_2017.xlsx', sheet = 6) %>% filter(`Примечание` == 'конец зандра') %>% transmute(date = `Дата`, bsd_B = `Wg, кг/с`, D50_B = `Средневзвешенный диаметр, мм`)
 
@@ -131,8 +217,14 @@ diam_2016_2017 = read_xlsx('sources/sediments_2015_2017.xlsx', sheet = 7) %>% fi
 
 bed_load = djan_sed_all %>% mutate(date = datetime) %>% select(-datetime) %>% full_join(diam_2016_2017) %>% left_join(bedload_B_2016) %>% bind_rows(sediment_load_2023)
 
+bed_load = bed_load %>% select(-names(bed_load)[9:length(names(bed_load))])
+
 rm(sediment_load_2023, bedload_B_2016, diam_2016, diam_2016_2017, djan_sed_all)
+
+writexl::write_xlsx(bed_load, 'out/bed_load.xlsx')
+
 ```
+
 ```{r}
 bed = bed_load %>% transmute(date = lubridate::date(date), bsd, D50_A, bsd_B, D50_B)
 bed_susp_2007_2023 = suspended_load %>% left_join(bed) %>% mutate(year1 = year(date), q = q, month1  = month(date)) %>% 
@@ -142,11 +234,12 @@ bed_susp_2007_2023 = suspended_load %>% left_join(bed) %>% mutate(year1 = year(d
 
 djan_sed_all = bed_susp_2007_2023 %>% subset(year1 == 2016 | year1 == 2017 | year1 == 2023) %>% transmute(date, bsd, ssd, q, tsd = bsd + ssd) %>% na.omit()
 
-bed_susp_2007_2023 = bed_susp_2007_2023 %>% mutate(g = ifelse(q <1.2, 0.033*q, 0.2619*q - 0.2669),
-                                                   tsd = (ssd + g)*60*60*24/1000000, 
-                                                   dolya  = g/(ssd+g),
-                                                   sediment_budget = ifelse(q > 1, 0.1318*q*q - 0.3266*q + 0.2144, 0)
-                                                   )
+bed_susp_2007_2023 = bed_susp_2007_2023 %>% mutate(
+  g = ifelse(q <1, 0.0235*q , ifelse(q > 2.5 ,0.53, 0.0036*exp(2.0269 * q)))*60*60*24/1000000
+  ,tsd = (ssd + g)*60*60*24/1000000 
+  ,dolya  = g/(ssd+g)
+  ,sediment_budget = ifelse(q > 1, 0.0918*q*q - 0.1704*q + 0.08, 0)
+)
 
 rm(bed)
 ```
@@ -161,45 +254,31 @@ bed_susp_2007_2023_D = bed_susp_2007_2023 %>% group_by(year1) %>% select(-date,-
 
 
 bed_susp_2007_2023_stat = bind_rows(list(bed_susp_2007_2023_mean, bed_susp_2007_2023_sum, bed_susp_2007_2023_min, bed_susp_2007_2023_max, bed_susp_2007_2023_D)) %>% mutate(across(where(is.numeric), ~gtsummary::style_sigfig(., 3, big.mark = '') ) ) %>% apply(., 2, function(y) gsub("*Inf", NA, y)) %>% data.frame() %>% mutate_all(~replace(., is.na(.), '-'))
-# 
-# colnames(bed_susp_2007_2023_stat ) = c(
-#   'Год'
-#   ,'Т воздб оС'
-#   ,'Осадки, мм'
-#   ,'Q А, м3/с'
-#   ,'SSC А, мг/л'
-#   ,'R А, кг/с'
-#   ,'G А, кг/с'
-#   ,'D50 А, мм'
-#   ,'G Б, кг/с'
-#   ,'D50 Б, мм'
-#   ,'Cуммарный сток наносов, кг/с'
-#   ,'G/(R+G)'
-#   ,'GA - GB, кг/с'
-#   ,'Статистика'
-# 
-#   
-# )
+
+
+# ggplot(bed_susp_2007_2023 %>% filter(year(date) == 2023)) + geom_line(aes(x = date, y = tsd/(60*60*24)*1000000), colour = 'blue') + geom_line(aes(x = date, y = g), colour = 'red') + geom_line(aes(x = date, y = q*10)) 
 
 writexl::write_xlsx(bed_susp_2007_2023_stat, 'out/bed_susp_2007_2023_stat2.xlsx')
-
-# bed_load = bed_susp_2007_2023 %>% select(q, bsd, date) %>% na.omit()
-# writexl::write_xlsx(bed_load, 'out/bed_load.xlsx')
-
 rm(bed_susp_2007_2023_mean, bed_susp_2007_2023_sum, bed_susp_2007_2023_min, bed_susp_2007_2023_max, bed_susp_2007_2023_D)
-
-
-ggplot(bed_susp_2007_2023 %>% filter(year(date) == 2023)) + geom_line(aes(x = date, y = tsd/(60*60*24)*1000000), colour = 'blue') + geom_line(aes(x = date, y = g), colour = 'red') + geom_line(aes(x = date, y = q*10)) 
-
-
-writexl::write_xlsx(bed_susp_2007_2023, 'out/bed_susp_2007_2023_djan.xlsx')
 ```
 
 Graphics
 ```{r}
-corrplot::corrplot(djan_sed_all %>% select(-date) %>% cor() , method = 'number' )
+#corrplot::corrplot(djan_sed_all %>% select(-date) %>% cor() , method = 'number' )
 
-g3 = djan_sed_all %>%
+djan_sed_all_for_g = bed_load %>% select(c(ssd, bsd, date)) 
+
+djan_sed_all_y = bed_load %>% mutate(year = year(date)) %>% select(-c(date, ssd, bsd, name, D50_A, bsd_B, D50_B)) %>% group_by(year) %>% summarise_all(c(max = max, min = min)) %>% mutate(max = round(max, 2) 
+                                                      ,min = round(min, 2)                                                                                                                    )
+
+labs <- c(paste0(djan_sed_all_y$year[1], ' Q,м3/с: ' ,djan_sed_all_y$min[1], ' - ', djan_sed_all_y$max[1])
+          ,paste0(djan_sed_all_y$year[2], ' Q,м3/с: ' ,djan_sed_all_y$min[2],' - ' , djan_sed_all_y$max[2])
+          ,paste0(djan_sed_all_y$year[3], ' Q,м3/с: ' ,djan_sed_all_y$min[3],' - ', djan_sed_all_y$max[3])
+          )
+
+names(labs) <- c('2016', '2017', '2023')
+
+g3 = djan_sed_all_for_g %>%
   # mutate_at(vars(ssd, bsd),
             # ~log10(.)) %>%
   rename(`Взвешенные` = ssd,
@@ -216,20 +295,23 @@ g3 = djan_sed_all %>%
        fill = "") +
   scale_color_metro() +
   scale_fill_metro() +
-  facet_wrap(~year(date), 
-             scales = 'free'
-             ) +
+  facet_wrap(~year(date) 
+             ,scales = 'free'
+             ,labeller = labeller(`year(date)` = labs))+
 scale_x_datetime(date_breaks = '2 days', date_labels = "%m / %d") +
   theme(axis.text.x = element_text(angle = 90
                                    ,vjust = .5
-                                   ,size = 20)
+                                   ,size = 10)
         ,axis.title.y = element_text(size = 20)
-        ,legend.text = element_text(size = 20) 
+        ,legend.text = element_text(size = 20)
+        ,strip.text.x = element_text(size = 15)
+        ,legend.position = "bottom"
         ) 
 
+g3
 
 ggsave(plot = g3 , filename = 'out/g3.png', width = 12, height = 5)
-g3
+
 rm(g3)
 
 g2 = ggplot(data = bed_susp_2007_2023) + 
@@ -241,12 +323,82 @@ g2 = ggplot(data = bed_susp_2007_2023) +
   labs(y = 'м3/с ,  кг/с , см', 
        x = ' ', 
        colour = ' ') + scale_x_datetime(date_breaks = '10 days', date_labels = "%m / %d")+
-  theme(axis.text.x = element_text(size = 20, angle = 90), axis.title.y = element_text(size = 20), legend.text = element_text(size = 20) ) + 
+  theme(axis.text.x = element_text(size = 20, angle = 90)
+        ,axis.title.y = element_text(size = 20) 
+        ,legend.text = element_text(size = 10)
+        ,legend.position = "bottom") + 
   guides(colour = guide_legend(nrow = 2))
 
+
+library(gtable)
+library(grid)
+
+
+g2 = lapply(unique(year(bed_susp_2007_2023$date)), function(Y){
+  
+  bed_susp_2007_2023 = bed_susp_2007_2023 %>% mutate(year = year(date) ) %>% filter(year == Y)
+  
+Q = ggplot(data = bed_susp_2007_2023) + 
+  geom_line(aes(x = date, y = q, color = '#006f48')) +
+  labs(y = expression(paste('Q, ',м^{3},'/с')), 
+       x = ' ' 
+       ) + 
+  scale_x_datetime(date_breaks = '15 days', date_labels = "%m / %d", guide = guide_axis(angle = 90))+ 
+  scale_y_continuous(limits = c(0, 6))+
+  scale_colour_identity(name="", guide="legend", labels=c("Q")) + 
+  theme(axis.text.x = element_text(size = 10)
+        ,axis.title.y = element_text(size = 20) 
+        ,legend.text = element_text(size = 10)
+        ,legend.position = "bottom"
+        )+ theme_bw() 
+
+P = ggplot(data = bed_susp_2007_2023) + 
+  geom_col(aes(x = date, y = rain_mm, color = 'black'), width = I(1), fill = NA)+
+  labs(y = 'P, мм', 
+       x = ' ', 
+       ) + scale_x_datetime(date_breaks = '15 days', date_labels = "%m / %d", guide = guide_axis(angle = 90))+
+  scale_colour_identity(name="", guide="legend", labels=c("P")) +
+  theme(axis.text.x = element_text(size = 10)
+        ,axis.title.y = element_text(size = 20) 
+        ,legend.text = element_text(size = 10)
+        ,legend.position = "bottom") + theme_bw()
+
+
+R  = ggplot(data = bed_susp_2007_2023) + 
+  geom_line(aes(x = date, y = ssd, color = 'blue')) + 
+  labs(y = 'R, кг/с', 
+       x = ' ', 
+       ) + scale_x_datetime(date_breaks = '15 days', date_labels = "%m / %d",guide = guide_axis(angle = 90))+
+  scale_colour_identity(name="", guide="legend", labels=c("R")) +
+  theme(axis.text.x = element_text(size = 10)
+        ,axis.title.y = element_text(size = 20) 
+        ,legend.text = element_text(size = 10)
+        ,legend.position = "bottom")+ theme_bw()
+
+
+G = ggplot(data = bed_susp_2007_2023) + 
+  geom_point(aes(x = date, y = bsd, color = 'violet'))+ 
+  labs(y = 'G, кг/с', 
+       x = ' ', 
+       ) + scale_x_datetime(date_breaks = '15 days', date_labels = "%m / %d",guide = guide_axis(angle = 90))+
+  scale_colour_identity(name="", guide="legend", labels=c("G")) +
+  theme(axis.text.x = element_text(size = 10)
+        ,axis.title.y = element_text(size = 20) 
+        ,legend.text = element_text(size = 10)
+        ,legend.position = "bottom") + theme_bw()
+
+
+
+Out = gg.layers::ggplot_multiaxis(P,Q,R,G)
+
+})
+
+g2 = ggpubr::ggarrange(g2[[1]], g2[[2]], g2[[3]], g2[[4]], g2[[5]],labels = unique(year(bed_susp_2007_2023$date))
+            ) 
+
+
 ggsave(plot = g2 , filename = 'out/g2.png', width = 12, height = 9)
-g2
-rm(g2)
+# rm(g2)
 ```
 
 Bedload budget 2016
@@ -258,6 +410,101 @@ bed_load_2016 = qread("sources/hydro_2007-2022_2023-04-21.qs") %>% filter(year(d
 
 writexl::write_xlsx(list(bed_load_2016, bed_load_2016_1), 'out/bed_load_2016.xlsx')
 rm(bed_load_2016_1)
+
+```
+Draw a figure of f function of bed load
+```{r}
+gran = read_xlsx(path = 'sources/Гран состав копия.xlsx', sheet = 4) 
+names(gran)[4] = '0.075'
+names(gran)[5] = '0.175'
+
+gran_F = gran[3:ncol(gran)] %>% apply(MARGIN = 1, function(x){
+  s = sum(x)
+  x = x/s
+                                      }) %>% t() 
+
+gran[3:ncol(gran)] = gran_F
+old_gran = gran
+
+bed_load = bed_load %>% mutate(year = year(date))
+gran = gran %>% left_join(bed_load) %>% select(-names(bed_load)[5:8]) %>% mutate(id = paste0(name,'_', year))
+gran = gran %>% reshape2::melt(id.vars = names(gran)[c(1, 2, 21, 22, 23, 24)]) %>% mutate(variable = as.numeric(as.character(variable)))
+ggplot(gran) + ggalt::geom_xspline(spline_shape = 0.4, aes(x = variable, y = value, group= id, col = q,
+                                                           linewidth = I(1))) + 
+  xlab('Диаметр, мм') + ylab('Доля данной фракции в пробе') + scale_x_continuous(trans = "log10") + scale_color_viridis_b(option = 'D')
+
+ggplot(gran) + ggalt::geom_xspline(spline_shape = 0.4, aes(x = variable, y = value, group= id, col = as.factor(year))) + xlab('Диаметр, мм') + ylab('Доля данной фракции в пробе')+ theme_bw() + scale_x_continuous(trans = "log10") 
+
+```
+
+D90 D50 D10 FINDING 
+```{r message=FALSE}
+gran_F = old_gran[3:ncol(old_gran)]
+
+for (i in 1:ncol(gran_F)){
+  
+gran_F[,i] = ifelse(i == 1, gran_F[,1],  gran_F[,i] + gran_F[,i-1])
+  
+}
+
+old_gran[3:ncol(old_gran)] = gran_F
+gran_F = old_gran[, 1:11]
+
+
+gran_F = gran_F %>% left_join(bed_load) %>% select(-names(bed_load)[5:8]) %>% mutate(id = paste0(name,'_', year))
+gran_F = gran_F %>% reshape2::melt(id.vars = names(gran_F)[c(1, 2, 15, 14,13, 12)]) %>% mutate(variable = as.numeric(as.character(variable)))
+
+t = ggplot(gran_F) + ggalt::geom_xspline(spline_shape = 0.4, aes(x = variable, y = value, group= id, q = q)) 
+pg = ggplot_build(t)$data[[1]] %>% data.frame() %>% 
+  transmute(d = round(x, 3) 
+            ,f = round(y, 2) 
+#            ,q = cut(q, c(0,1,2,3,Inf),labels=c('<1','1-2','2-3','>3'))
+             ,q = cut(q, c(0,1,1.5,2,2.5,3,Inf),labels=c('<0.5','1-1.5','1.5-2','2-2.5', '2.5-3', '3.5>'))
+            ,g = group          
+                
+     )
+pg = split(pg, pg$g) %>% lapply( function(x){
+  
+  ra = seq(0,1, 0.01) %>% data.frame()
+  names(ra) = 'f'
+  ra = ra %>% left_join(x) %>%
+      mutate(d = zoo::na.approx(d, rule = 2) 
+             ,q = unique(q) %>% na.omit()
+             ,g = mean(g, na.rm = T)
+             )
+
+}) %>% bind_rows()
+
+g4 = ggplot(pg)+ geom_boxplot(aes(x = q, y = d)) + ylim(c(0,3)) + 
+  xlab('Расход воды, м3/с')+ ylab('Диаметр, мм')+
+  theme(axis.text.x = element_text(size = 20, angle = 90), axis.title.y = element_text(size = 20) ) + 
+  theme_bw()
+
+ggsave(plot = g4, filename = 'out/g4.png', width = 6, height = 3)
+
+#ggplot(pg_split) + geom_point(aes(x = d, y = f, group = g, col = q))
+
+#Quantile calc
+d90 = pg %>% 
+  mutate(P = ifelse(f == 0.9, 0.9, F)) %>% group_by(g, q) %>% filter(P == 0.90) %>% summarise_all(mean) %>% ungroup() %>% group_by(q) %>% summarise(d90 = mean(d))
+
+d10 = pg %>% 
+  mutate(P = ifelse(f == 0.1, 0.1, F)) %>% group_by(g,q) %>% filter(P == 0.10) %>% summarise_all(mean) %>% ungroup() %>% group_by(q) %>% summarise(d10 = mean(d))
+
+d25 = pg %>% 
+  mutate(P = ifelse(f ==0.25, 0.25, F)) %>% group_by(g, q) %>% filter(P == 0.25)%>% summarise_all(mean) %>% ungroup() %>% group_by(q) %>% summarise(d25 = mean(d))
+
+d75 = pg %>% 
+  mutate(P = ifelse(f ==0.75, 0.75, F)) %>% group_by(g,q) %>% filter(P == 0.75)%>% summarise_all(mean) %>% ungroup() %>% group_by(q) %>% summarise(d75 = mean(d))
+
+d50 = pg %>% 
+  mutate(P = ifelse(f==0.5, 0.5, F)) %>% group_by(g,q) %>% filter(P == 0.50) %>% summarise_all(mean) %>% ungroup() %>% group_by(q) %>% summarise(d50 = mean(d))
+
+
+d = d10 %>% left_join(d25) %>% left_join(d50) %>% left_join(d75) %>%  left_join(d90) %>% 
+  reshape2::melt(id.vars = 'q')
+
+ggplotly(ggplot(d)+ geom_point(aes(x = q, y = value, col = variable)))
 
 
 

@@ -1,0 +1,24 @@
+"0","a_hydro_2007_2022 <- "
+"0","  qread(""sources/hydro_2007-2022_2023-04-21.qs"") %>% dplyr::select(-c(year, ntu)) %>% "
+"0","  mutate(q = zoo::na.approx(q, rule = 2, maxgap = 20), "
+"0","         ssc = zoo::na.approx(ssc, rule = 2, maxgap = 20), "
+"0","        date = paste0(ymd(datetime), '_', day(datetime))) %>% "
+"0","  group_by(date) %>% select(-datetime) %>% summarise_all(mean) %>% mutate(date = ymd(substr(date, 1, 10))) %>% ungroup() %>% na.omit()"
+"2","Warning: [38;5;254mThere was 1 warning in `mutate()`.[39m
+[38;5;254m[36mℹ[38;5;254m In argument: `date = paste0(ymd(datetime), ""_"", day(datetime))`.[39m
+Caused by warning:
+[33m![39m  143250 failed to parse."
+"2","Warning: [38;5;254mThere was 1 warning in `mutate()`.[39m
+[38;5;254m[36mℹ[38;5;254m In argument: `date = ymd(substr(date, 1, 10))`.[39m
+Caused by warning:
+[33m![39m  31 failed to parse."
+"0","# - Davis data"
+"0","data_2007_2022 <- "
+"0","  qread(""sources/aws_daily_2008-2022_2023-04-20.qs"") %>% full_join(a_hydro_2007_2022) %>% bind_rows(data_2023)"
+"2","Joining with `by = join_by(date)`"
+"0","seq_days = seq.POSIXt(ymd_hms('2007-01-01 00:00:00'),ymd_hms('2024-01-01 00:00:00'), by = 'days') %>% data.frame() "
+"0","colnames(seq_days) = 'date'"
+"0",""
+"0","suspended_load= seq_days %>% mutate(x = ' ') %>% full_join(data_2007_2022) %>% select(-x) %>% mutate(ssd = q*ssc/1000) # ssc - kg/sec"
+"2","Joining with `by = join_by(date)`"
+"0","rm(data_2007_2022, seq_days, data_2023)"

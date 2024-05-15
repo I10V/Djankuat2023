@@ -1,0 +1,91 @@
+"0","g2 = lapply(unique(year(bed_susp_2007_2023$date)), function(Y){
+  
+  bed_susp_2007_2023 = bed_susp_2007_2023 %>% mutate(year = year(date) ) %>% filter(year == Y)
+  
+Q = ggplot(data = bed_susp_2007_2023) + 
+  geom_line(aes(x = date, y = q, color = '#006f48')) +
+  labs(y = expression(paste('Q, ',м^{3},'/с')), 
+       x = ' ' 
+       ) + 
+  scale_x_datetime(date_breaks = '15 days', date_labels = ""%m / %d"", guide = guide_axis(angle = 90))+ 
+  scale_y_continuous(limits = c(0, 6))+
+  scale_colour_identity(name="""", guide=""legend"", labels=c(""Q"")) + 
+  theme(axis.text.x = element_text(size = 10)
+        ,axis.title.y = element_text(size = 20) 
+        ,legend.text = element_text(size = 10)
+        ,legend.position = ""bottom""
+        )+ theme_bw() 
+
+P = ggplot(data = bed_susp_2007_2023) + 
+  geom_col(aes(x = date, y = rain_mm, color = 'black'), width = I(1), fill = NA)+
+  labs(y = 'P, мм', 
+       x = ' ', 
+       ) + scale_x_datetime(date_breaks = '15 days', date_labels = ""%m / %d"", guide = guide_axis(angle = 90))+
+  scale_colour_identity(name="""", guide=""legend"", labels=c(""P"")) +
+  theme(axis.text.x = element_text(size = 10)
+        ,axis.title.y = element_text(size = 20) 
+        ,legend.text = element_text(size = 10)
+        ,legend.position = ""bottom"") + theme_bw()
+
+
+R  = ggplot(data = bed_susp_2007_2023) + 
+  geom_line(aes(x = date, y = ssd, color = 'blue')) + 
+  labs(y = 'R, кг/с', 
+       x = ' ', 
+       ) + scale_x_datetime(date_breaks = '15 days', date_labels = ""%m / %d"",guide = guide_axis(angle = 90))+
+  scale_colour_identity(name="""", guide=""legend"", labels=c(""R"")) +
+  theme(axis.text.x = element_text(size = 10)
+        ,axis.title.y = element_text(size = 20) 
+        ,legend.text = element_text(size = 10)
+        ,legend.position = ""bottom"")+ theme_bw()
+
+
+G = ggplot(data = bed_susp_2007_2023) + 
+  geom_point(aes(x = date, y = bsd, color = 'violet'))+ 
+  labs(y = 'G, кг/с', 
+       x = ' ', 
+       ) + scale_x_datetime(date_breaks = '15 days', date_labels = ""%m / %d"",guide = guide_axis(angle = 90))+
+  scale_colour_identity(name="""", guide=""legend"", labels=c(""G"")) +
+  theme(axis.text.x = element_text(size = 10)
+        ,axis.title.y = element_text(size = 20) 
+        ,legend.text = element_text(size = 10)
+        ,legend.position = ""bottom"") + theme_bw()
+
+
+
+Out = gg.layers::ggplot_multiaxis(P,Q,R,G)
+
+})
+"
+"2","Warning: [38;5;254mRemoved 20 rows containing missing values or values outside the scale range (`geom_col()`).[39m"
+"2","[38;5;254mScale for [32my[38;5;254m is already present.
+Adding another scale for [32my[38;5;254m, which will replace the existing scale.[39m"
+"2","Warning: [38;5;254mRemoved 20 rows containing missing values or values outside the scale range (`geom_line()`).[39m"
+"2","Warning: [38;5;254mRemoved 20 rows containing missing values or values outside the scale range (`geom_line()`).[39m"
+"2","Warning: [38;5;254mRemoved 122 rows containing missing values or values outside the scale range (`geom_point()`).[39m"
+"2","Warning: [38;5;254mRemoved 8 rows containing missing values or values outside the scale range (`geom_col()`).[39m"
+"2","[38;5;254mScale for [32my[38;5;254m is already present.
+Adding another scale for [32my[38;5;254m, which will replace the existing scale.[39m"
+"2","Warning: [38;5;254mRemoved 25 rows containing missing values or values outside the scale range (`geom_line()`).[39m"
+"2","Warning: [38;5;254mRemoved 25 rows containing missing values or values outside the scale range (`geom_line()`).[39m"
+"2","Warning: [38;5;254mRemoved 111 rows containing missing values or values outside the scale range (`geom_point()`).[39m"
+"2","Warning: [38;5;254mRemoved 15 rows containing missing values or values outside the scale range (`geom_col()`).[39m"
+"2","[38;5;254mScale for [32my[38;5;254m is already present.
+Adding another scale for [32my[38;5;254m, which will replace the existing scale.[39m"
+"2","Warning: [38;5;254mRemoved 16 rows containing missing values or values outside the scale range (`geom_line()`).[39m"
+"2","Warning: [38;5;254mRemoved 16 rows containing missing values or values outside the scale range (`geom_line()`).[39m"
+"2","Warning: [38;5;254mRemoved 96 rows containing missing values or values outside the scale range (`geom_point()`).[39m"
+"2","Warning: [38;5;254mRemoved 12 rows containing missing values or values outside the scale range (`geom_col()`).[39m"
+"2","[38;5;254mScale for [32my[38;5;254m is already present.
+Adding another scale for [32my[38;5;254m, which will replace the existing scale.[39m"
+"2","Warning: [38;5;254mRemoved 15 rows containing missing values or values outside the scale range (`geom_line()`).[39m"
+"2","Warning: [38;5;254mRemoved 15 rows containing missing values or values outside the scale range (`geom_line()`).[39m"
+"2","Warning: [38;5;254mRemoved 122 rows containing missing values or values outside the scale range (`geom_point()`).[39m"
+"2","Warning: [38;5;254mRemoved 49 rows containing missing values or values outside the scale range (`geom_col()`).[39m"
+"2","[38;5;254mScale for [32my[38;5;254m is already present.
+Adding another scale for [32my[38;5;254m, which will replace the existing scale.[39m"
+"2","Warning: [38;5;254mRemoved 18 rows containing missing values or values outside the scale range (`geom_line()`).[39m"
+"2","Warning: [38;5;254mRemoved 18 rows containing missing values or values outside the scale range (`geom_line()`).[39m"
+"2","Warning: [38;5;254mRemoved 113 rows containing missing values or values outside the scale range (`geom_point()`).[39m"
+"0","g2 = ggpubr::ggarrange(g2[[1]], g2[[2]], g2[[3]], g2[[4]], g2[[5]],labels = unique(year(bed_susp_2007_2023$date))"
+"0","            ) "
